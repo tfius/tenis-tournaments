@@ -1,0 +1,367 @@
+/**
+ * Generates unique player pairings where players don't repeat in pairs or face the same opponent twice
+ */
+function generateUniquePairs() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+  
+  // Get player names from column A, starting from row 2 (assuming row 1 has headers)
+  const playersRange = sheet.getRange("A2:A" + sheet.getLastRow());
+  const playersValues = playersRange.getValues();
+  
+  // Filter out empty cells and create a clean array of player names
+  const players = playersValues.filter(row => row[0] !== "").map(row => row[0]);
+  
+  // Check if we have an even number of players
+  if (players.length % 2 !== 0) {
+    Browser.msgBox("Potrebujete sodo število igralcev. Trenutno imate " + players.length + " igralcev.");
+    return;
+  }
+  
+  // Create output sheet for results if it doesn't exist
+  let outputSheet;
+  try {
+    outputSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Pari");
+    if (!outputSheet) {
+      outputSheet = SpreadsheetApp.getActiveSpreadsheet().insertSheet("Pari");
+    } else {
+      outputSheet.clear();
+    }
+  } catch (e) {
+    Browser.msgBox("Napaka pri ustvarjanju lista za rezultate: " + e.toString());
+    return;
+  }
+  
+  // Set up headers
+  outputSheet.getRange("A1").setValue("Krog");
+  outputSheet.getRange("B1").setValue("Igralec 1");
+  outputSheet.getRange("C1").setValue("Igralec 2");
+  
+  // Track which players have played against each other
+  const playedAgainst = {};
+  players.forEach(player => {
+    playedAgainst[player] = {};
+    players.forEach(opponent => {
+      if (player !== opponent) {
+        playedAgainst[player][opponent] = false;
+      }
+    });
+  });
+  
+  // Maximum number of rounds where each player plays against every other player exactly once
+  const maxRounds = players.length - 1;
+  
+  // For each round
+  let row = 2; // Start from row 2 (after headers)
+  let roundCount = 1;
+  
+  while (roundCount <= maxRounds) {
+    // Copy players array for this round
+    const availablePlayers = [...players];
+    const roundPairs = [];
+    
+    // Match players for this round
+    while (availablePlayers.length > 0) {
+      const player1 = availablePlayers.shift();
+      
+      // Find an opponent for player1 who hasn't played against them yet
+      let foundOpponent = false;
+      for (let i = 0; i < availablePlayers.length; i++) {
+        const player2 = availablePlayers[i];
+        
+        if (!playedAgainst[player1][player2]) {
+          // Found a valid opponent
+          roundPairs.push([player1, player2]);
+          playedAgainst[player1][player2] = true;
+          playedAgainst[player2][player1] = true;
+          
+          // Remove player2 from available players
+          availablePlayers.splice(i, 1);
+          foundOpponent = true;
+          break;
+        }
+      }
+      
+      // If no valid opponent was found, we have a problem with the pairing algorithm
+      if (!foundOpponent && availablePlayers.length > 0) {
+        // Try to recreate this round from scratch
+        // Restore played against status for this round and try a different approach
+        roundPairs.forEach(pair => {
+          playedAgainst[pair[0]][pair[1]] = false;
+          playedAgainst[pair[1]][pair[0]] = false;
+        });
+        
+        // If we can't find a valid pairing after several attempts, report the problem
+        Browser.msgBox("Ni bilo mogoče najti veljavnega razporeda za krog " + roundCount);
+        return;
+      }
+    }
+    
+    // Write this round's pairs to the output sheet
+    roundPairs.forEach(pair => {
+      outputSheet.getRange(row, 1).setValue(roundCount);
+      outputSheet.getRange(row, 2).setValue(pair[0]);
+      outputSheet.getRange(row, 3).setValue(pair[1]);
+      row++;
+    });
+    
+    roundCount++;
+  }
+  
+  // Format the output sheet
+  outputSheet.autoResizeColumns(1, 3);
+}
+
+/**
+ * Adds a menu item to run the pairing generator
+ */
+function onOpen() {
+  const ui = SpreadsheetApp.getUi();
+  ui.createMenu('Pari')
+    .addItem('Generiraj pare igralcev', 'generateUniquePairs')
+    .addToUi();
+}
+
+/**
+ * Generates unique doubles pairings where:
+ * - Players don't repeat as partners
+ * - Players don't face the same opponents twice
+ * - Order doesn't matter (e.g., A-B vs C-D is the same as B-A vs D-C)
+ */
+function generateUniqueDoublesPairs() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+  
+  // Get player names from column A, starting from row 2 (assuming row 1 has headers)
+  const playersRange = sheet.getRange("A2:A" + sheet.getLastRow());
+  const playersValues = playersRange.getValues();
+  
+  // Filter out empty cells and create a clean array of player names
+  const players = playersValues.filter(row => row[0] !== "").map(row => row[0])
+  Browser.msgBox("Igraleci:" + players[0] + " - " + players[players.length-1] + " #:" + players.length)
+  
+  // Check if we have enough players (need at least 4, and multiple of 4 for simplicity)
+  if (players.length % 4 !== 0) {
+    Browser.msgBox("Potrebujete število igralcev, ki je deljivo s 4. Trenutno imate " + players.length + " igralcev.");
+    return;
+  }
+  
+  // Create output sheet for results if it doesn't exist
+  let outputSheet;
+  try {
+    outputSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Dvojice");
+    if (!outputSheet) {
+      outputSheet = SpreadsheetApp.getActiveSpreadsheet().insertSheet("Dvojice");
+    } else {
+      outputSheet.clear();
+    }
+  } catch (e) {
+    Browser.msgBox("Napaka pri ustvarjanju lista za rezultate: " + e.toString());
+    return;
+  }
+  
+  // Set up headers
+  outputSheet.getRange("A1").setValue("Krog");
+  outputSheet.getRange("B1").setValue("Igralec 1A");
+  outputSheet.getRange("C1").setValue("Igralec 1B");
+  outputSheet.getRange("D1").setValue("Igralec 2A");
+  outputSheet.getRange("E1").setValue("Igralec 2B");
+  
+  // Track partnerships: which players have played as partners
+  const playedAsTogether = {};
+  
+  // Track opponents: which players have played against each other
+  const playedAgainst = {};
+  
+  // Initialize tracking objects
+  players.forEach(player1 => {
+    playedAsTogether[player1] = {};
+    playedAgainst[player1] = {};
+    
+    players.forEach(player2 => {
+      if (player1 !== player2) {
+        playedAsTogether[player1][player2] = false;
+        playedAgainst[player1][player2] = false;
+      }
+    });
+  });
+  
+  // Calculate maximum number of possible rounds
+  // Each player needs to partner with (n-1) other players
+  // and in each round, n/4 matches occur with n/2 players per match
+  const maxRounds = (players.length - 1);
+  let possibleRounds = 0;
+  
+  // Start generating rounds
+  let row = 2; // Start from row 2 (after headers)
+  let roundCount = 1;
+  
+  while (roundCount <= maxRounds && possibleRounds < 100) { // Limit to prevent infinite loops
+    possibleRounds++;
+    
+    // Copy players array for this round
+    const availablePlayers = [...players];
+    const roundMatches = [];
+    let validPairingsPossible = true;
+    
+    // For each match in this round
+    while (availablePlayers.length >= 4 && validPairingsPossible) {
+      const team1 = findValidTeam(availablePlayers, playedAsTogether);
+      
+      if (!team1) {
+        validPairingsPossible = false;
+        break;
+      }
+      
+      // Remove team1 players from available players
+      removeFromArray(availablePlayers, team1[0]);
+      removeFromArray(availablePlayers, team1[1]);
+      
+      // Find a valid opponent team
+      const team2 = findValidOpponents(availablePlayers, team1, playedAsTogether, playedAgainst);
+      
+      if (!team2) {
+        validPairingsPossible = false;
+        break;
+      }
+      
+      // Remove team2 players from available players
+      removeFromArray(availablePlayers, team2[0]);
+      removeFromArray(availablePlayers, team2[1]);
+      
+      // Record match
+      roundMatches.push([team1, team2]);
+      
+      // Update tracking records
+      updatePartnershipRecord(team1[0], team1[1], playedAsTogether);
+      updatePartnershipRecord(team2[0], team2[1], playedAsTogether);
+      
+      updateOpponentRecord(team1[0], team2[0], playedAgainst);
+      updateOpponentRecord(team1[0], team2[1], playedAgainst);
+      updateOpponentRecord(team1[1], team2[0], playedAgainst);
+      updateOpponentRecord(team1[1], team2[1], playedAgainst);
+    }
+    
+    // If we couldn't create valid pairings, try again with a different arrangement
+    if (!validPairingsPossible || availablePlayers.length > 0) {
+      // Reset any recorded partnerships/opponents from this failed round
+      roundMatches.forEach(match => {
+        const team1 = match[0];
+        const team2 = match[1];
+        
+        // Reset partnerships
+        playedAsTogether[team1[0]][team1[1]] = false;
+        playedAsTogether[team1[1]][team1[0]] = false;
+        playedAsTogether[team2[0]][team2[1]] = false;
+        playedAsTogether[team2[1]][team2[0]] = false;
+        
+        // Reset opponents
+        playedAgainst[team1[0]][team2[0]] = false;
+        playedAgainst[team1[0]][team2[1]] = false;
+        playedAgainst[team1[1]][team2[0]] = false;
+        playedAgainst[team1[1]][team2[1]] = false;
+        playedAgainst[team2[0]][team1[0]] = false;
+        playedAgainst[team2[0]][team1[1]] = false;
+        playedAgainst[team2[1]][team1[0]] = false;
+        playedAgainst[team2[1]][team1[1]] = false;
+      });
+      
+      continue; // Skip to next attempt
+    }
+    
+    // Write this round's matches to the output sheet
+    roundMatches.forEach(match => {
+      outputSheet.getRange(row, 1).setValue(roundCount);
+      outputSheet.getRange(row, 2).setValue(match[0][0]);
+      outputSheet.getRange(row, 3).setValue(match[0][1]);
+      outputSheet.getRange(row, 4).setValue(match[1][0]);
+      outputSheet.getRange(row, 5).setValue(match[1][1]);
+      row++;
+    });
+    
+    roundCount++;
+  }
+  
+  if (roundCount <= maxRounds) {
+    Browser.msgBox("Ni bilo mogoče najti popolnega razporeda za vse kroge. Uspešno generirano " + (roundCount-1) + " krogov.");
+  }
+  
+  // Format the output sheet
+  outputSheet.autoResizeColumns(1, 5);
+  
+  // Helper functions
+  function findValidTeam(availablePlayers, playedAsTogether) {
+    if (availablePlayers.length < 2) return null;
+    
+    for (let i = 0; i < availablePlayers.length; i++) {
+      const player1 = availablePlayers[i];
+      
+      for (let j = i + 1; j < availablePlayers.length; j++) {
+        const player2 = availablePlayers[j];
+        
+        // Check if these players haven't partnered before
+        if (!playedAsTogether[player1][player2]) {
+          return [player1, player2];
+        }
+      }
+    }
+    
+    return null; // No valid team found
+  }
+  
+  function findValidOpponents(availablePlayers, team1, playedAsTogether, playedAgainst) {
+    if (availablePlayers.length < 2) return null;
+    
+    for (let i = 0; i < availablePlayers.length; i++) {
+      const player1 = availablePlayers[i];
+      
+      // Check if this player has played against either team1 player
+      const hasPlayedAgainstTeam1 = playedAgainst[player1][team1[0]] || playedAgainst[player1][team1[1]];
+      
+      if (hasPlayedAgainstTeam1) continue;
+      
+      for (let j = i + 1; j < availablePlayers.length; j++) {
+        const player2 = availablePlayers[j];
+        
+        // Check if these potential opponents haven't partnered before
+        if (playedAsTogether[player1][player2]) continue;
+        
+        // Check if player2 has played against either team1 player
+        const player2HasPlayedAgainstTeam1 = playedAgainst[player2][team1[0]] || playedAgainst[player2][team1[1]];
+        
+        if (player2HasPlayedAgainstTeam1) continue;
+        
+        // This is a valid opponent team
+        return [player1, player2];
+      }
+    }
+    
+    return null; // No valid opponents found
+  }
+  
+  function removeFromArray(array, item) {
+    const index = array.indexOf(item);
+    if (index !== -1) {
+      array.splice(index, 1);
+    }
+  }
+  
+  function updatePartnershipRecord(player1, player2, playedAsTogether) {
+    playedAsTogether[player1][player2] = true;
+    playedAsTogether[player2][player1] = true;
+  }
+  
+  function updateOpponentRecord(player1, player2, playedAgainst) {
+    playedAgainst[player1][player2] = true;
+    playedAgainst[player2][player1] = true;
+  }
+}
+
+/**
+ * Adds a menu item to run the doubles pairing generator
+ */
+function onOpen() {
+  const ui = SpreadsheetApp.getUi();
+  ui.createMenu('Pari')
+    .addItem('Generiraj pare igralcev', 'generateUniquePairs')
+    .addItem('Generiraj dvojice igralcev', 'generateUniqueDoublesPairs')
+    .addToUi();
+}
